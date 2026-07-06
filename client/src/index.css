@@ -1,0 +1,38 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #fff7ed;
+  color: #1f2937;
+}
+
+nav {
+  padding: 16px;
+  background: #f97316;
+}
+
+nav a {
+  color: white;
+  margin-right: 12px;
+  text-decoration: none;
+  font-weight: bold;
+}
+
+div {
+  padding: 20px;
+}
+
+button {
+  margin: 8px;
+  padding: 10px 16px;
+  background: #f97316;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+input {
+  margin: 8px;
+  padding: 10px;
+  width: 250px;
+}
