@@ -57,7 +57,7 @@ exports.upsertInventory = async (req, res) => {
         wastedQuantity,
         status,
       },
-      { new: true, upsert: true, runValidators: true }
+      {  returnDocument: "after", upsert: true, runValidators: true }
     );
 
     res.status(200).json({

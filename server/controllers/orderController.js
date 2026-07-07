@@ -36,7 +36,6 @@ exports.placeOrder = async (req, res) => {
         item: cartItem.item,
         date: today,
       });
-
       if (!inventory || inventory.remainingQuantity < cartItem.quantity) {
         return res.status(400).json({
           success: false,

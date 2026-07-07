@@ -1,7 +1,7 @@
 const Order = require("../models/Order");
 const Inventory = require("../models/Inventory");
 const mongoose = require("mongoose");
-const { getLocalDate } = require("../helpers/dateHelper");
+const { getLocalDate, getLocalDayRange } = require("../helpers/dateHelper");
 
 
 
@@ -9,11 +9,9 @@ exports.getOwnerDashboardSummary = async (req, res) => {
   try {
     const { shopId } = req.params;
 
+    const { startOfDay, endOfDay } = getLocalDayRange();
     const today = getLocalDate();
 
-
-    const startOfDay = new Date(`${today}T00:00:00.000Z`);
-    const endOfDay = new Date(`${today}T23:59:59.999Z`);
 
     const todayOrders = await Order.find({
       shop: shopId,
