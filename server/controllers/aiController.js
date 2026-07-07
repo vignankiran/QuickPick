@@ -1,7 +1,7 @@
 const Order = require("../models/Order");
 const Inventory = require("../models/Inventory");
 const analyticsService = require("../services/analyticsService");
-
+const { getLocalDate } = require("../helpers/dateHelper");
 
 exports.getBusinessInsights = async (req, res) => {
   try {
@@ -17,7 +17,7 @@ exports.getBusinessInsights = async (req, res) => {
       shop: shopId,
       createdAt: { $gte: today },
       orderStatus: { $nin: ["cancelled", "rejected", "expired"] },
-    });
+    }).lean();
 
     const revenue = orders.reduce(
       (sum, order) => sum + order.totalAmount,
@@ -33,8 +33,9 @@ exports.getBusinessInsights = async (req, res) => {
     // Inventory Check
     const inventory = await Inventory.find({
       shop: shopId,
-      date: today.toISOString().split("T")[0],
-    }).populate("item", "name");
+      date: getLocalDate(),
+    }).populate("item", "name")
+    .lean();
 
     inventory.forEach((item) => {
       if (item.remainingQuantity <= 5) {
@@ -92,7 +93,8 @@ exports.getSmartInventorySuggestions = async (req, res) => {
         shop: shopId,
         })
         .sort({ updatedAt: -1 })
-        .populate("item", "name price");
+        .populate("item", "name price")
+        .lean();
 
     const suggestions = inventory.map((record) => {
       let suggestion = "Stock level looks fine.";
@@ -141,7 +143,7 @@ exports.getDemandPrediction = async (req, res) => {
     const orders = await Order.find({
       shop: shopId,
       orderStatus: { $nin: ["cancelled", "rejected", "expired"] },
-    });
+    }).lean();
 
     const itemSales = {};
     let totalRevenue = 0;
@@ -285,7 +287,8 @@ exports.getDailyActionPlan = async (req, res) => {
 
     const inventory = await Inventory.find({
       shop: shopId,
-    }).populate("item", "name");
+    }).populate("item", "name")
+    .lean();
 
     const lowStockItems = inventory.filter(
       (item) => item.remainingQuantity <= 5

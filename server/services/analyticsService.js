@@ -10,13 +10,13 @@ exports.getTodayRevenue = async (shopId) => {
   const orders = await Order.find({
     shop: shopId,
     createdAt: {
-      $gte: today,
-      $lt: tomorrow,
+        $gte: today,
+        $lt: tomorrow,
     },
     orderStatus: {
-      $nin: ["cancelled", "rejected", "expired"],
+        $nin: ["cancelled", "rejected", "expired"],
     },
-  });
+}).select("totalAmount").lean();
 
   const revenue = orders.reduce(
     (sum, order) => sum + order.totalAmount,

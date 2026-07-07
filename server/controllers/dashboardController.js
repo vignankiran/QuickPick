@@ -1,6 +1,7 @@
 const Order = require("../models/Order");
 const Inventory = require("../models/Inventory");
 const mongoose = require("mongoose");
+const { getLocalDate } = require("../helpers/dateHelper");
 
 
 
@@ -8,7 +9,8 @@ exports.getOwnerDashboardSummary = async (req, res) => {
   try {
     const { shopId } = req.params;
 
-    const today = new Date().toISOString().split("T")[0];
+    const today = getLocalDate();
+
 
     const startOfDay = new Date(`${today}T00:00:00.000Z`);
     const endOfDay = new Date(`${today}T23:59:59.999Z`);
@@ -16,7 +18,7 @@ exports.getOwnerDashboardSummary = async (req, res) => {
     const todayOrders = await Order.find({
       shop: shopId,
       createdAt: { $gte: startOfDay, $lte: endOfDay },
-    });
+    }).lean();
 
     const totalOrders = todayOrders.length;
 
@@ -46,7 +48,8 @@ exports.getOwnerDashboardSummary = async (req, res) => {
     const inventory = await Inventory.find({
       shop: shopId,
       date: today,
-    }).populate("item", "name price");
+    }).populate("item", "name price")
+    .lean();
 
     const lowStockItems = inventory.filter(
       (inv) => inv.remainingQuantity > 0 && inv.remainingQuantity <= 10
@@ -95,7 +98,8 @@ exports.getLiveOrders = async (req, res) => {
       orderStatus: { $in: activeStatuses },
     })
       .populate("customer", "name phone")
-      .sort({ arrivalTime: 1 });
+      .sort({ arrivalTime: 1 })
+      .lean();
 
     res.status(200).json({
       success: true,
@@ -114,12 +118,12 @@ exports.getLiveOrders = async (req, res) => {
 exports.getInventorySummary = async (req, res) => {
   try {
     const { shopId } = req.params;
-    const today = new Date().toISOString().split("T")[0];
-
+    const today = getLocalDate();
     const inventory = await Inventory.find({
       shop: shopId,
       date: today,
-    }).populate("item", "name price");
+    }).populate("item", "name price")
+    .lean();
 
     res.status(200).json({
       success: true,
@@ -230,12 +234,14 @@ exports.getLowStockAlerts = async (req, res) => {
   try {
     const { shopId } = req.params;
 
-    const today = new Date().toISOString().split("T")[0];
+    const today = getLocalDate();
+
 
     const inventory = await Inventory.find({
       shop: shopId,
       date: today,
-    }).populate("item", "name price");
+    }).populate("item", "name price")
+    .lean();
 
     const LOW_STOCK_THRESHOLD = 10;
 

@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 const Order = require("../models/Order");
-
+const Inventory = require("../models/Inventory");
 exports.getPeakHoursAnalytics = async (req, res) => {
   try {
     const { shopId } = req.params;
@@ -235,7 +235,7 @@ exports.getItemPerformance = async (req, res) => {
   }
 };
 
-const Inventory = require("../models/Inventory");
+
 
 exports.getWasteAnalysis = async (req, res) => {
   try {
@@ -243,7 +243,8 @@ exports.getWasteAnalysis = async (req, res) => {
 
     const inventory = await Inventory.find({
       shop: shopId,
-    }).populate("item", "name");
+    }).populate("item", "name")
+    .lean();
 
     const wasteAnalysis = inventory.map((record) => {
       const wastePercentage =

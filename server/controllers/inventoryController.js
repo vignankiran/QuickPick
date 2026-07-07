@@ -73,3 +73,73 @@ exports.upsertInventory = async (req, res) => {
     });
   }
 };
+
+exports.getInventory = async (req, res) => {
+  try {
+    const { shopId } = req.params;
+
+    const inventory = await Inventory.find({
+      shop: shopId,
+    })
+      .populate("item", "name price")
+      .sort({ createdAt: 1 })
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      count: inventory.length,
+      inventory,
+    });
+  } catch (error) {
+    console.error("GET INVENTORY ERROR:", error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.deleteInventory = async (req, res) => {
+  try {
+    const { inventoryId } = req.params;
+
+    const inventory = await Inventory.findById(inventoryId);
+
+    if (!inventory) {
+      return res.status(404).json({
+        success: false,
+        message: "Inventory not found.",
+      });
+    }
+
+    const shop = await Shop.findById(inventory.shop);
+
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        message: "Shop not found.",
+      });
+    }
+
+    if (shop.owner.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "You can delete inventory only for your own shop.",
+      });
+    }
+
+    await inventory.deleteOne();
+
+    res.status(200).json({
+      success: true,
+      message: "Inventory deleted successfully.",
+    });
+  } catch (error) {
+    console.error("DELETE INVENTORY ERROR:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};

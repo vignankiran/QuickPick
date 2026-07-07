@@ -5,8 +5,9 @@ const jwt = require("jsonwebtoken");
 // Register User
 exports.register = async (req, res) => {
   try {
-    const { name, phone, email, password } = req.body;
-
+      const { name, phone, email, password, role } = req.body;
+      const allowedRoles = ["customer", "owner"];
+      const safeRole = allowedRoles.includes(role) ? role : "customer";
     // Validation
     if (!name || !phone || !password) {
       return res.status(400).json({
@@ -29,12 +30,13 @@ exports.register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Create user
-    const user = await User.create({
-      name,
-      phone,
-      email,
-      password: hashedPassword,
-    });
+   const user = await User.create({
+    name,
+    phone,
+    email,
+    password: hashedPassword,
+    role: safeRole,
+});
 
     // Generate JWT
     const token = jwt.sign(
@@ -87,6 +89,12 @@ exports.login = async (req, res) => {
         message: "Invalid phone or password.",
       });
     }
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: "Account is inactive.",
+      });
+    }
 
     const isMatch = await bcrypt.compare(password, user.password);
 
@@ -131,6 +139,12 @@ exports.getMe = async (req, res) => {
 
 exports.devResetPassword = async (req, res) => {
   try {
+    if (process.env.NODE_ENV === "production") {
+        return res.status(403).json({
+          success: false,
+          message: "This route is disabled in production.",
+        });
+      }
     const { phone, newPassword } = req.body;
 
     if (!phone || !newPassword) {

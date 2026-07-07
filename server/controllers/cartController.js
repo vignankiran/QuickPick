@@ -5,11 +5,7 @@ const Item = require("../models/Item");
 exports.addToCart = async (req, res) => {
   try {
     const { shop, item, quantity } = req.body;
-    console.log("CART BODY:", req.body);
-console.log("SHOP:", shop);
-console.log("ITEM:", item);
-console.log("QUANTITY:", quantity);
-
+   
     if (!shop || !item || !quantity) {
       return res.status(400).json({
         success: false,
@@ -22,7 +18,7 @@ console.log("QUANTITY:", quantity);
   shop: shop,
 });
 
-console.log("FOUND MENU ITEM:", menuItem);
+
 
 if (!menuItem || menuItem.status !== "available" || menuItem.isAvailable !== true) {
   return res.status(404).json({
@@ -31,12 +27,6 @@ if (!menuItem || menuItem.status !== "available" || menuItem.isAvailable !== tru
   });
 }
 
-    if (!menuItem) {
-      return res.status(404).json({
-        success: false,
-        message: "Item not available.",
-      });
-    }
 
     let cart = await Cart.findOne({
       customer: req.user._id,
@@ -97,7 +87,8 @@ exports.getCart = async (req, res) => {
     const cart = await Cart.findOne({
       customer: req.user._id,
       shop: shopId,
-    }).populate("items.item", "name price image status isAvailable");
+    }).populate("items.item", "name price image status isAvailable")
+    .lean();
 
     if (!cart) {
       return res.status(200).json({

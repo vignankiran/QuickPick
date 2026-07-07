@@ -1,11 +1,15 @@
 const Category = require("../models/Category");
 const Shop = require("../models/Shop");
 
+
+
+
+
 // Create Category
 exports.createCategory = async (req, res) => {
   try {
     const { shop, name, slug, description, displayOrder } = req.body;
-
+        
     if (!shop || !name || !slug) {
       return res.status(400).json({
         success: false,
@@ -28,7 +32,16 @@ exports.createCategory = async (req, res) => {
         message: "You can create categories only for your own shop.",
       });
     }
-
+    const existingCategory = await Category.findOne({
+          shop,
+          slug,
+        });
+        if (existingCategory) {
+          return res.status(400).json({
+            success: false,
+            message: "Category slug already exists for this shop.",
+          });
+        }
     const category = await Category.create({
       shop,
       name,
@@ -58,8 +71,9 @@ exports.getCategoriesByShop = async (req, res) => {
     const categories = await Category.find({
       shop: shopId,
       isActive: true,
-    }).sort({ displayOrder: 1, name: 1 });
-
+    })
+      .sort({ displayOrder: 1, name: 1 })
+      .lean();
     res.status(200).json({
       success: true,
       count: categories.length,

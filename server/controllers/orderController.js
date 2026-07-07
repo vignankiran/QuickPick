@@ -1,6 +1,8 @@
 const Order = require("../models/Order");
 const Cart = require("../models/Cart");
 const Inventory = require("../models/Inventory");
+const { getLocalDate } = require("../helpers/dateHelper");
+
 
 exports.placeOrder = async (req, res) => {
   try {
@@ -26,8 +28,8 @@ exports.placeOrder = async (req, res) => {
     }
 
     // Basic inventory validation
-    const today = new Date().toISOString().split("T")[0];
-
+    const today = getLocalDate();
+    
     for (const cartItem of cart.items) {
       const inventory = await Inventory.findOne({
         shop,
@@ -112,7 +114,8 @@ exports.getMyOrders = async (req, res) => {
       customer: req.user._id,
     })
       .populate("shop", "name phone address city")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     res.status(200).json({
       success: true,
@@ -147,7 +150,8 @@ exports.getShopOrders = async (req, res) => {
       orderStatus: { $in: activeStatuses },
     })
       .populate("customer", "name phone email")
-      .sort({ arrivalTime: 1 });
+      .sort({ arrivalTime: 1 })
+      .lean();
 
     res.status(200).json({
       success: true,
@@ -253,7 +257,8 @@ exports.getKitchenQueue = async (req, res) => {
       orderStatus: { $in: activeStatuses },
     })
       .populate("customer", "name phone")
-      .sort({ kitchenStartTime: 1, arrivalTime: 1 });
+      .sort({ kitchenStartTime: 1, arrivalTime: 1 })
+      .lean();
 
     res.status(200).json({
       success: true,
@@ -340,7 +345,8 @@ exports.getShopOrderHistory = async (req, res) => {
       orderStatus: { $in: historyStatuses },
     })
       .populate("customer", "name phone email")
-      .sort({ updatedAt: -1 });
+      .sort({ updatedAt: -1 })
+      .lean();
 
     res.status(200).json({
       success: true,

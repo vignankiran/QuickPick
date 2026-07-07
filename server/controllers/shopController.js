@@ -61,8 +61,9 @@ exports.createShop = async (req, res) => {
 };
 exports.getShops = async (req, res) => {
   try {
-    const shops = await Shop.find().populate("owner", "name phone email role");
-
+    const shops = await Shop.find({ isActive: true })
+    .populate("owner", "name phone email role")
+    .lean();
     res.status(200).json({
       success: true,
       count: shops.length,

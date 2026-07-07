@@ -27,7 +27,7 @@ exports.createItem = async (req, res) => {
 
 if (!shop || !category || !name || !slug || price === undefined) {      return res.status(400).json({
         success: false,
-        message: "Shop, category, name, and price are required.",
+        message: "Shop, category, name, slug, and price are required.",
       });
     }
 
@@ -58,6 +58,17 @@ if (!shop || !category || !name || !slug || price === undefined) {      return r
         message: "Category not found for this shop.",
       });
     }
+    const existingItem = await Item.findOne({
+        shop,
+        slug,
+      });
+
+      if (existingItem) {
+        return res.status(400).json({
+          success: false,
+          message: "Item slug already exists for this shop.",
+        });
+      }
 
     const item = await Item.create({
       shop,
@@ -98,7 +109,8 @@ exports.getItemsByShop = async (req, res) => {
 
     const items = await Item.find({ shop: shopId })
       .populate("category", "name slug")
-      .sort({ displayOrder: 1, name: 1 });
+      .sort({ displayOrder: 1, name: 1 })
+      .lean();
 
     res.status(200).json({
       success: true,
@@ -107,6 +119,59 @@ exports.getItemsByShop = async (req, res) => {
     });
   } catch (error) {
     console.error("GET ITEMS ERROR:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.updateItem = async (req, res) => {
+  try {
+    const { itemId } = req.params;
+
+    const item = await Item.findById(itemId);
+
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: "Item not found.",
+      });
+    }
+
+    const shop = await Shop.findById(item.shop);
+
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        message: "Shop not found.",
+      });
+    }
+
+    if (shop.owner.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "You can update only your own shop items.",
+      });
+    }
+
+    const updatedItem = await Item.findByIdAndUpdate(
+      itemId,
+      req.body,
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Item updated successfully.",
+      item: updatedItem,
+    });
+  } catch (error) {
+    console.error("UPDATE ITEM ERROR:", error);
+
     res.status(500).json({
       success: false,
       message: error.message,
