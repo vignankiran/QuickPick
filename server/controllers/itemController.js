@@ -1,6 +1,9 @@
 const Item = require("../models/Item");
 const Shop = require("../models/Shop");
+const Order = require("../models/Order");
 const Category = require("../models/Category");
+const Inventory = require("../models/Inventory");
+const Cart = require("../models/Cart");
 
 // Create Item
 exports.createItem = async (req, res) => {
@@ -175,6 +178,75 @@ exports.updateItem = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message,
+    });
+  }
+};
+exports.deleteItem = async (req, res) => {
+  try {
+    const { itemId } = req.params;
+
+    const item = await Item.findById(itemId);
+
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: "Item not found",
+      });
+    }
+
+    const shop = await Shop.findById(item.shop);
+
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        message: "Shop not found",
+      });
+    }
+
+    if (shop.owner.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to delete this item",
+      });
+    }
+
+    const usedInOrder = await Order.exists({
+      "items.item": itemId,
+    });
+
+    if (usedInOrder) {
+      item.isAvailable = false;
+      await item.save();
+
+      return res.status(200).json({
+        success: true,
+        message:
+          "Item is used in past orders, so it was deactivated instead of deleted",
+      });
+    }
+
+    await Inventory.deleteMany({ item: itemId });
+
+    await Cart.updateMany(
+      { "items.item": itemId },
+      {
+        $pull: {
+          items: { item: itemId },
+        },
+      }
+    );
+
+    await Item.findByIdAndDelete(itemId);
+
+    res.status(200).json({
+      success: true,
+      message: "Item deleted successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete item",
+      error: error.message,
     });
   }
 };

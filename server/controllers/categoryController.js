@@ -1,6 +1,6 @@
 const Category = require("../models/Category");
 const Shop = require("../models/Shop");
-
+const Item = require("../models/Item");
 
 
 
@@ -84,6 +84,58 @@ exports.getCategoriesByShop = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message,
+    });
+  }
+};
+exports.deleteCategory = async (req, res) => {
+  try {
+    const { categoryId } = req.params;
+
+    const category = await Category.findById(categoryId);
+
+    if (!category) {
+      return res.status(404).json({
+        success: false,
+        message: "Category not found",
+      });
+    }
+
+    const shop = await Shop.findById(category.shop);
+
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        message: "Shop not found",
+      });
+    }
+
+    if (shop.owner.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to delete this category",
+      });
+    }
+
+    const itemExists = await Item.exists({ category: categoryId });
+
+    if (itemExists) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot delete category because items exist under this category",
+      });
+    }
+
+    await Category.findByIdAndDelete(categoryId);
+
+    res.status(200).json({
+      success: true,
+      message: "Category deleted successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete category",
+      error: error.message,
     });
   }
 };

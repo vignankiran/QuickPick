@@ -96,6 +96,15 @@ const shopSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    temporaryClosedUntil: {
+        type: Date,
+        default: null,
+      },
+
+      temporaryCloseReason: {
+        type: String,
+        default: "",
+      },
   },
   { timestamps: true }
 );

@@ -62,18 +62,28 @@ exports.createShop = async (req, res) => {
 exports.getShops = async (req, res) => {
   try {
     const shops = await Shop.find({ isActive: true })
-    .populate("owner", "name phone email role")
-    .lean();
+      .populate("owner", "name phone email")
+      .lean();
+
+    const now = new Date();
+
+    const formattedShops = shops.map((shop) => ({
+      ...shop,
+      isTemporarilyClosed:
+        shop.temporaryClosedUntil &&
+        new Date(shop.temporaryClosedUntil) > now,
+    }));
+
     res.status(200).json({
       success: true,
-      count: shops.length,
-      shops,
+      count: formattedShops.length,
+      shops: formattedShops,
     });
   } catch (error) {
-    console.error("GET SHOPS ERROR:", error);
     res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Failed to fetch shops",
+      error: error.message,
     });
   }
 };
@@ -111,6 +121,100 @@ exports.updateShop = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message,
+    });
+  }
+};
+exports.temporaryCloseShop = async (req, res) => {
+  try {
+    const { shopId } = req.params;
+    const { closedUntil, reason } = req.body;
+
+    if (!closedUntil) {
+      return res.status(400).json({
+        success: false,
+        message: "Closed until time is required",
+      });
+    }
+
+    const closeUntilDate = new Date(closedUntil);
+
+    if (closeUntilDate <= new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: "Closed until time must be in the future",
+      });
+    }
+
+    const shop = await Shop.findById(shopId);
+
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        message: "Shop not found",
+      });
+    }
+
+    if (shop.owner.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to close this shop",
+      });
+    }
+
+    shop.temporaryClosedUntil = closeUntilDate;
+    shop.temporaryCloseReason = reason || "Temporarily closed";
+
+    await shop.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Shop temporarily closed successfully",
+      shop,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to temporarily close shop",
+      error: error.message,
+    });
+  }
+};
+
+exports.reopenShop = async (req, res) => {
+  try {
+    const { shopId } = req.params;
+
+    const shop = await Shop.findById(shopId);
+
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        message: "Shop not found",
+      });
+    }
+
+    if (shop.owner.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to reopen this shop",
+      });
+    }
+
+    shop.temporaryClosedUntil = null;
+    shop.temporaryCloseReason = "";
+
+    await shop.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Shop reopened successfully",
+      shop,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to reopen shop",
+      error: error.message,
     });
   }
 };

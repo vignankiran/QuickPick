@@ -276,7 +276,7 @@ exports.getKitchenQueue = async (req, res) => {
 exports.cancelOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
-    const { reason } = req.body;
+    const { reason } = req.body || {};
 
     const order = await Order.findById(orderId);
 

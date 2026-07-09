@@ -4,9 +4,15 @@ server/node_modules/
 
 # Environment files
 server/.env
+client/.env
+
+# Postman local environments
+Postman/*environment.json
+
 
 # Logs
 *.log
+logs/
 
 # OS files
 .DS_Store
