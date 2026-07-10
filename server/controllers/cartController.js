@@ -260,3 +260,33 @@ exports.clearCart = async (req, res) => {
     });
   }
 };
+
+exports.getMyCarts = async (req, res) => {
+  try {
+    const carts = await Cart.find({
+      customer: req.user._id,
+      "items.0": { $exists: true },
+    })
+      .populate(
+        "shop",
+        "name address city isActive temporaryClosedUntil temporaryCloseReason"
+      )
+      .populate("items.item", "name price isAvailable")
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      count: carts.length,
+      carts,
+    });
+  } catch (error) {
+    console.error("GET MY CARTS ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch customer carts",
+      error: error.message,
+    });
+  }
+};

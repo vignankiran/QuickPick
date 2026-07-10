@@ -105,7 +105,6 @@ const Checkout = () => {
         notes,
         });
 
-      localStorage.removeItem("quickpick_cart_shop");
 
       alert("Order placed successfully.");
       navigate("/my-orders");

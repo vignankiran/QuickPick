@@ -5,11 +5,9 @@ const CustomerLayout = () => {
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
 
-  const cartShopId = localStorage.getItem("quickpick_cart_shop");
-
+  
   const handleLogout = () => {
     logout();
-    localStorage.removeItem("quickpick_cart_shop");
     navigate("/login");
   };
 
@@ -24,13 +22,11 @@ const CustomerLayout = () => {
           <Link to="/">Home</Link>
 
           {isAuthenticated && user?.role === "customer" && (
-            <>
-              <Link to={cartShopId ? `/cart/${cartShopId}` : "/cart"}>
-                Cart
-              </Link>
-              <Link to="/my-orders">My Orders</Link>
-            </>
-          )}
+                <>
+                  <Link to="/cart">Cart</Link>
+                  <Link to="/my-orders">My Orders</Link>
+                </>
+              )}
 
           {isAuthenticated ? (
             <>

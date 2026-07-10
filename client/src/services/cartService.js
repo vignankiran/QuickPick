@@ -32,3 +32,7 @@ export const clearCart = async (shopId) => {
 
   return res.data;
 };
+export const getMyCarts = async () => {
+  const res = await API.get("/cart/my-carts");
+  return res.data;
+};

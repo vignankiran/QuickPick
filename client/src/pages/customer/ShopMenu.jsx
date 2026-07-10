@@ -119,7 +119,6 @@ const ShopMenu = () => {
         quantity: 1,
         });
 
-        localStorage.setItem("quickpick_cart_shop", shopId);
 
         setSuccessMessage("Item added to cart successfully.");
 
@@ -182,7 +181,7 @@ const ShopMenu = () => {
       {successMessage && (
         <div className="success-message success-row">
             <span>{successMessage}</span>
-            <Link to={`/cart/${shopId}`}>View Cart</Link>
+            <Link to="/cart">View Cart</Link>
         </div>
         )}
 
