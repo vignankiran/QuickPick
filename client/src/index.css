@@ -1546,3 +1546,23 @@ a {
     width: 100%;
   }
 }
+.cart-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.cart-count-badge {
+  min-width: 21px;
+  height: 21px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #38bdf8;
+  color: #020617;
+  font-size: 12px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}

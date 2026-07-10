@@ -107,6 +107,9 @@ const Checkout = () => {
 
 
       alert("Order placed successfully.");
+      window.dispatchEvent(
+        new Event("quickpick-cart-updated")
+      );
       navigate("/my-orders");
     } catch (error) {
       alert(
