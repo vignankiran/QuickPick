@@ -15,6 +15,7 @@ const Inventory = () => {
   const [shop, setShop] = useState(null);
   const [items, setItems] = useState([]);
   const [inventory, setInventory] = useState([]);
+  const [activeTab, setActiveTab] = useState("today");
 
   const [formData, setFormData] = useState({
     item: "",
@@ -252,7 +253,36 @@ const Inventory = () => {
       );
     }
   };
+  const getInventoryDate = (dateValue) => {
+    if (!dateValue) return "";
 
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+      return dateValue;
+    }
+
+    return new Date(dateValue).toLocaleDateString("en-CA", {
+      timeZone: "Asia/Kolkata",
+    });
+  };
+
+  const todayIST = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Asia/Kolkata",
+  });
+
+  const sortedInventory = [...inventory].sort(
+    (a, b) => new Date(b.date) - new Date(a.date)
+  );
+
+  const todayInventory = sortedInventory.filter(
+    (record) => getInventoryDate(record.date) === todayIST
+  );
+
+  const inventoryHistory = sortedInventory.filter(
+    (record) => getInventoryDate(record.date) !== todayIST
+  );
+
+  const displayedInventory =
+    activeTab === "today" ? todayInventory : inventoryHistory;
   if (loading) {
     return <div className="page-loading">Loading inventory...</div>;
   }
@@ -372,18 +402,37 @@ const Inventory = () => {
         </div>
 
         <div className="dashboard-section">
-          <h2>Today’s Inventory</h2>
+          <h2>
+              {activeTab === "today" ? "Today’s Inventory" : "Inventory History"}
+            </h2>
 
-          {inventory.length === 0 ? (
+            <div className="filter-tabs">
+              <button
+                className={activeTab === "today" ? "filter-tab active" : "filter-tab"}
+                onClick={() => setActiveTab("today")}
+              >
+                Today ({todayInventory.length})
+              </button>
+
+              <button
+                className={activeTab === "history" ? "filter-tab active" : "filter-tab"}
+                onClick={() => setActiveTab("history")}
+              >
+                History ({inventoryHistory.length})
+              </button>
+            </div>
+
+          {displayedInventory.length === 0 ? (
             <p className="muted-text">
               No inventory records yet. Add inventory using the form.
             </p>
           ) : (
             <div className="inventory-list">
-              {inventory.map((record) => (
+              {displayedInventory.map((record) => (
                 <div className="inventory-card" key={record._id}>
                   <div>
                     <h3>{record.item?.name || "Item"}</h3>
+                    <p>Date: {getInventoryDate(record.date)}</p>
                     <p>
                       Prepared: {record.preparedQuantity || 0} | Sold:{" "}
                       {record.soldQuantity || 0} | Remaining:{" "}
@@ -394,6 +443,7 @@ const Inventory = () => {
                     </span>
                   </div>
 
+                    {activeTab === "today" ? (
                   <div className="inventory-card-actions">
                     <button
                       className="primary-btn"
@@ -409,6 +459,9 @@ const Inventory = () => {
                       Delete
                     </button>
                   </div>
+                ) : (
+                  <span className="history-readonly-badge">Read Only</span>
+                )}
                 </div>
               ))}
             </div>

@@ -1372,3 +1372,12 @@ a {
   color: #020617;
   font-weight: 800;
 }
+.history-readonly-badge {
+  display: inline-block;
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 800;
+}
