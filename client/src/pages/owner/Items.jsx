@@ -29,6 +29,7 @@ const Items = () => {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [editingItemId, setEditingItemId] = useState(null);
   const [error, setError] = useState("");
 
   const getUserId = () => user?._id || user?.id;
@@ -128,7 +129,43 @@ const Items = () => {
       [name]: type === "checkbox" ? checked : value,
     });
   };
+  const handleEdit = (item) => {
+    const categoryId =
+      typeof item.category === "object"
+        ? item.category?._id || item.category?.id
+        : item.category;
 
+    setEditingItemId(item._id);
+
+    setFormData({
+      name: item.name || "",
+      slug: item.slug || "",
+      price: item.price || "",
+      category: categoryId || "",
+      description: item.description || "",
+      displayOrder: item.displayOrder || 0,
+      isAvailable: item.isAvailable ?? true,
+    });
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingItemId(null);
+
+    setFormData({
+      name: "",
+      slug: "",
+      price: "",
+      category: "",
+      description: "",
+      displayOrder: 0,
+      isAvailable: true,
+    });
+  };
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -155,16 +192,24 @@ const Items = () => {
     try {
       setSaving(true);
 
-      await createItem({
-        shop: shop._id,
+      const itemData = {
         category: formData.category,
         name: formData.name,
-        slug: formData.slug,
         price: Number(formData.price),
         description: formData.description,
         displayOrder: Number(formData.displayOrder || 0),
         isAvailable: formData.isAvailable,
-      });
+      };
+
+      if (editingItemId) {
+        await updateItem(editingItemId, itemData);
+      } else {
+        await createItem({
+          shop: shop._id,
+          slug: formData.slug,
+          ...itemData,
+        });
+      }
 
       setFormData({
         name: "",
@@ -175,7 +220,7 @@ const Items = () => {
         displayOrder: 0,
         isAvailable: true,
       });
-
+        setEditingItemId(null);
       await loadItemsPage();
     } catch (error) {
       alert(
@@ -254,8 +299,7 @@ const Items = () => {
 
       <div className="inventory-layout">
         <div className="dashboard-section">
-          <h2>Add Item</h2>
-          <p className="muted-text">
+          <h2>{editingItemId ? "Edit Item" : "Add Item"}</h2>          <p className="muted-text">
             Create menu items under categories like Starters, Biryani, Tiffins.
           </p>
 
@@ -279,6 +323,7 @@ const Items = () => {
                 value={formData.slug}
                 onChange={handleChange}
                 placeholder="Example: chicken-65"
+                disabled={!!editingItemId}
               />
             </div>
 
@@ -342,9 +387,25 @@ const Items = () => {
               <label>Available for ordering</label>
             </div>
 
-            <button className="primary-btn" type="submit" disabled={saving}>
-              {saving ? "Saving..." : "Create Item"}
+            <div className="form-actions">
+              <button className="primary-btn" type="submit" disabled={saving}>
+            {saving
+              ? "Saving..."
+              : editingItemId
+              ? "Update Item"
+              : "Create Item"}
+          </button>
+
+          {editingItemId && (
+            <button
+              className="clear-cart-btn"
+              type="button"
+              onClick={handleCancelEdit}
+            >
+              Cancel Edit
             </button>
+          )}
+        </div>
           </form>
         </div>
 
@@ -377,6 +438,13 @@ const Items = () => {
                   </div>
 
                   <div className="inventory-card-actions">
+                    <button
+                      className="primary-btn"
+                      onClick={() => handleEdit(item)}
+                    >
+                      Edit
+                    </button>
+
                     <button
                       className="primary-btn"
                       onClick={() => handleToggleAvailability(item)}
