@@ -106,21 +106,47 @@ exports.updateShop = async (req, res) => {
       });
     }
 
-    const updatedShop = await Shop.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
+    const allowedUpdates = {
+      name: req.body.name,
+      phone: req.body.phone,
+      email: req.body.email,
+      address: req.body.address,
+      city: req.body.city,
+      state: req.body.state,
+      pincode: req.body.pincode,
+      openingTime: req.body.openingTime,
+      closingTime: req.body.closingTime,
+      acceptsPreOrders: req.body.acceptsPreOrders,
+      maxOrdersPerSlot: req.body.maxOrdersPerSlot,
+    };
+
+    // Remove fields that were not sent.
+    Object.keys(allowedUpdates).forEach((key) => {
+      if (allowedUpdates[key] === undefined) {
+        delete allowedUpdates[key];
+      }
     });
 
-    res.status(200).json({
+    const updatedShop = await Shop.findByIdAndUpdate(
+      req.params.id,
+      allowedUpdates,
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    return res.status(200).json({
       success: true,
       message: "Shop updated successfully.",
       shop: updatedShop,
     });
   } catch (error) {
     console.error("UPDATE SHOP ERROR:", error);
-    res.status(500).json({
+
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message: error.message || "Failed to update shop.",
     });
   }
 };

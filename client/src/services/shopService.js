@@ -13,3 +13,7 @@ export const reopenShop = async (shopId) => {
   const res = await API.put(`/shops/${shopId}/reopen`);
   return res.data;
 };
+export const updateShopDetails = async (shopId, shopData) => {
+  const res = await API.put(`/shops/${shopId}`, shopData);
+  return res.data;
+};
