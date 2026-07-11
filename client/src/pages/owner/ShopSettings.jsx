@@ -25,6 +25,7 @@ const ShopSettings = () => {
   closingTime: "22:00",
   acceptsPreOrders: true,
   maxOrdersPerSlot: 10,
+  serviceSlots: [],
 });
 
 const [updatingDetails, setUpdatingDetails] = useState(false);
@@ -54,7 +55,16 @@ const [updatingDetails, setUpdatingDetails] = useState(false);
       closingTime: shopData?.closingTime || "22:00",
       acceptsPreOrders: shopData?.acceptsPreOrders ?? true,
       maxOrdersPerSlot: shopData?.maxOrdersPerSlot || 10,
-    });
+      serviceSlots: Array.isArray(shopData?.serviceSlots)
+      ? shopData.serviceSlots.map((slot) => ({
+          _id: slot._id || undefined,
+          name: slot.name || "",
+          openingTime: slot.openingTime || "",
+          closingTime: slot.closingTime || "",
+          isEnabled: slot.isEnabled !== false,
+        }))
+      : [],
+        });
   };
 
   const loadShop = async () => {
@@ -108,8 +118,58 @@ const [updatingDetails, setUpdatingDetails] = useState(false);
     ...previous,
     [name]: type === "checkbox" ? checked : value,
   }));
-};
+  };
+  const handleAddServiceSlot = () => {
+    if (shopForm.serviceSlots.length >= 10) {
+      alert("You can add a maximum of 10 timing sessions.");
+      return;
+    }
 
+    setShopForm((previous) => ({
+      ...previous,
+      serviceSlots: [
+        ...previous.serviceSlots,
+        {
+          name: "",
+          openingTime: "",
+          closingTime: "",
+          isEnabled: true,
+        },
+      ],
+    }));
+  };
+
+  const handleServiceSlotChange = (index, e) => {
+    const { name, value, type, checked } = e.target;
+
+    setShopForm((previous) => ({
+      ...previous,
+      serviceSlots: previous.serviceSlots.map(
+        (slot, slotIndex) =>
+          slotIndex === index
+            ? {
+                ...slot,
+                [name]: type === "checkbox" ? checked : value,
+              }
+            : slot
+      ),
+    }));
+  };
+
+  const handleRemoveServiceSlot = (index) => {
+    const confirmRemove = window.confirm(
+      "Remove this timing session?"
+    );
+
+    if (!confirmRemove) return;
+
+    setShopForm((previous) => ({
+      ...previous,
+      serviceSlots: previous.serviceSlots.filter(
+        (_, slotIndex) => slotIndex !== index
+      ),
+    }));
+  };
 const handleUpdateShop = async (e) => {
   e.preventDefault();
 
@@ -254,7 +314,105 @@ const handleUpdateShop = async (e) => {
           placeholder="Enter shop name"
         />
       </div>
+      <div className="service-timings-section full-width">
+      <div className="service-timings-header">
+        <div>
+          <h3>Service Timings</h3>
+          <p className="muted-text">
+            Add timings based on when your shop serves customers.
+          </p>
+        </div>
 
+        <button
+          type="button"
+          className="primary-btn"
+          onClick={handleAddServiceSlot}
+        >
+          + Add Timing
+        </button>
+      </div>
+
+      {shopForm.serviceSlots.length === 0 ? (
+        <div className="service-timings-empty">
+          <p>No custom timings added yet.</p>
+          <p>
+            Example: Morning Tiffins, Lunch, Evening Snacks or Dinner.
+          </p>
+        </div>
+      ) : (
+        <div className="service-slots-list">
+          {shopForm.serviceSlots.map((slot, index) => (
+            <div
+              className="service-slot-row"
+              key={slot._id || `service-slot-${index}`}
+            >
+              <div className="form-group">
+                <label>Session Name</label>
+
+                <input
+                  type="text"
+                  name="name"
+                  value={slot.name}
+                  onChange={(event) =>
+                    handleServiceSlotChange(index, event)
+                  }
+                  placeholder="Example: Morning Tiffins"
+                />
+              </div>
+
+              <div className="form-group">
+                  <label>Opening Time</label>
+
+                  <input
+                    type="time"
+                    name="openingTime"
+                    value={slot.openingTime}
+                    onChange={(event) =>
+                      handleServiceSlotChange(index, event)
+                    }
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Closing Time</label>
+
+                  <input
+                    type="time"
+                    name="closingTime"
+                    value={slot.closingTime}
+                    onChange={(event) =>
+                      handleServiceSlotChange(index, event)
+                    }
+                  />
+                </div>
+
+                <div className="service-slot-actions">
+                  <label className="service-slot-enabled">
+                    <input
+                      type="checkbox"
+                      name="isEnabled"
+                      checked={slot.isEnabled}
+                      onChange={(event) =>
+                        handleServiceSlotChange(index, event)
+                      }
+                    />
+
+                    <span>Enabled</span>
+                  </label>
+
+                  <button
+                    type="button"
+                    className="danger-btn"
+                    onClick={() => handleRemoveServiceSlot(index)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="form-group">
         <label>Shop Phone</label>
         <input

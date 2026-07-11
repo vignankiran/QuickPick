@@ -4,7 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Store, MapPin, ArrowRight } from "lucide-react";
 import { getAllShops } from "../../services/shopService";
 import { useAuth } from "../../context/AuthContext";
-
+import ShopTimingDisplay from "../../components/shop/ShopTimingDisplay";
 
 const Home = () => {
     const { user, isAuthenticated } = useAuth();
@@ -126,21 +126,7 @@ const Home = () => {
                     {shop.address || shop.location || "Location not added"}
                   </p>
 
-                  <span
-                      className={
-                        shop.isTemporarilyClosed
-                          ? "status-badge low_stock"
-                          : shop.isActive
-                          ? "status-badge available"
-                          : "status-badge sold_out"
-                      }
-                    >
-                      {shop.isTemporarilyClosed
-                        ? "Temporarily Closed"
-                        : shop.isActive
-                        ? "Open"
-                        : "Closed"}
-                    </span>
+                 <ShopTimingDisplay shop={shop} compact />
                 </div>
 
                 <ArrowRight className="shop-arrow" size={22} />

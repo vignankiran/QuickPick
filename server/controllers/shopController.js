@@ -1,5 +1,106 @@
 const Shop = require("../models/Shop");
+const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
+const timeToMinutes = (time) => {
+  const [hours, minutes] = time.split(":").map(Number);
+  return hours * 60 + minutes;
+};
+
+const validateServiceSlots = (serviceSlots) => {
+  if (!Array.isArray(serviceSlots)) {
+    return {
+      valid: false,
+      message: "Service timings must be an array.",
+    };
+  }
+
+  if (serviceSlots.length > 10) {
+    return {
+      valid: false,
+      message: "A shop can have a maximum of 10 timing sessions.",
+    };
+  }
+
+  const cleanedSlots = [];
+
+  for (let index = 0; index < serviceSlots.length; index += 1) {
+    const slot = serviceSlots[index];
+
+    const name = String(slot?.name || "").trim();
+    const openingTime = String(slot?.openingTime || "");
+    const closingTime = String(slot?.closingTime || "");
+    const isEnabled = slot?.isEnabled !== false;
+
+    if (!name) {
+      return {
+        valid: false,
+        message: `Timing ${index + 1} must have a name.`,
+      };
+    }
+
+    if (!TIME_PATTERN.test(openingTime)) {
+      return {
+        valid: false,
+        message: `${name} opening time must use HH:mm format.`,
+      };
+    }
+
+    if (!TIME_PATTERN.test(closingTime)) {
+      return {
+        valid: false,
+        message: `${name} closing time must use HH:mm format.`,
+      };
+    }
+
+    if (timeToMinutes(closingTime) <= timeToMinutes(openingTime)) {
+      return {
+        valid: false,
+        message: `${name} closing time must be later than its opening time.`,
+      };
+    }
+
+    const cleanedSlot = {
+      name,
+      openingTime,
+      closingTime,
+      isEnabled,
+    };
+
+    if (slot?._id) {
+      cleanedSlot._id = slot._id;
+    }
+
+    cleanedSlots.push(cleanedSlot);
+  }
+
+  const enabledSlots = cleanedSlots
+    .filter((slot) => slot.isEnabled)
+    .sort(
+      (first, second) =>
+        timeToMinutes(first.openingTime) -
+        timeToMinutes(second.openingTime)
+    );
+
+  for (let index = 1; index < enabledSlots.length; index += 1) {
+    const previousSlot = enabledSlots[index - 1];
+    const currentSlot = enabledSlots[index];
+
+    if (
+      timeToMinutes(currentSlot.openingTime) <
+      timeToMinutes(previousSlot.closingTime)
+    ) {
+      return {
+        valid: false,
+        message: `${previousSlot.name} and ${currentSlot.name} timings overlap.`,
+      };
+    }
+  }
+
+  return {
+    valid: true,
+    slots: cleanedSlots,
+  };
+};
 // Create Shop
 exports.createShop = async (req, res) => {
   try {
@@ -105,7 +206,22 @@ exports.updateShop = async (req, res) => {
         message: "You can update only your own shop.",
       });
     }
+      let validatedServiceSlots;
 
+      if (req.body.serviceSlots !== undefined) {
+        const timingValidation = validateServiceSlots(
+          req.body.serviceSlots
+        );
+
+        if (!timingValidation.valid) {
+          return res.status(400).json({
+            success: false,
+            message: timingValidation.message,
+          });
+        }
+
+        validatedServiceSlots = timingValidation.slots;
+      }
     const allowedUpdates = {
       name: req.body.name,
       phone: req.body.phone,
@@ -116,6 +232,7 @@ exports.updateShop = async (req, res) => {
       pincode: req.body.pincode,
       openingTime: req.body.openingTime,
       closingTime: req.body.closingTime,
+      serviceSlots: validatedServiceSlots,
       acceptsPreOrders: req.body.acceptsPreOrders,
       maxOrdersPerSlot: req.body.maxOrdersPerSlot,
     };

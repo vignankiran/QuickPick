@@ -1,5 +1,40 @@
 const mongoose = require("mongoose");
+const serviceSlotSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: [true, "Timing name is required"],
+      trim: true,
+      maxlength: [50, "Timing name cannot exceed 50 characters"],
+    },
 
+    openingTime: {
+      type: String,
+      required: [true, "Opening time is required"],
+      match: [
+        /^([01]\d|2[0-3]):([0-5]\d)$/,
+        "Opening time must use HH:mm format",
+      ],
+    },
+
+    closingTime: {
+      type: String,
+      required: [true, "Closing time is required"],
+      match: [
+        /^([01]\d|2[0-3]):([0-5]\d)$/,
+        "Closing time must use HH:mm format",
+      ],
+    },
+
+    isEnabled: {
+      type: Boolean,
+      default: true,
+    },
+  },
+  {
+    _id: true,
+  }
+);
 const shopSchema = new mongoose.Schema(
   {
     name: {
@@ -75,6 +110,10 @@ const shopSchema = new mongoose.Schema(
     closingTime: {
       type: String,
       default: "22:00",
+    },
+    serviceSlots: {
+      type: [serviceSlotSchema],
+      default: [],
     },
 
     acceptsPreOrders: {
