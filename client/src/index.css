@@ -1692,6 +1692,7 @@ a {
 }
 
 .shop-open-status,
+.shop-preorder-status,
 .shop-closed-status {
   padding: 5px 10px;
   border-radius: 999px;
@@ -1702,6 +1703,10 @@ a {
 .shop-open-status {
   background: rgba(34, 197, 94, 0.15);
   color: #22c55e;
+}
+.shop-preorder-status {
+  background: rgba(245, 158, 11, 0.16);
+  color: #f59e0b;
 }
 
 .shop-closed-status {
@@ -1747,4 +1752,111 @@ a {
     flex-direction: column;
     gap: 4px;
   }
+}
+.orders-refresh-btn {
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spin-icon {
+  animation: quickpick-spin 0.8s linear infinite;
+}
+
+@keyframes quickpick-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.orders-table-wrapper {
+  overflow-x: auto;
+}
+
+.owner-orders-table {
+  min-width: 1200px;
+}
+
+.owner-orders-table td {
+  vertical-align: top;
+}
+
+.owner-order-id,
+.owner-customer-details,
+.owner-order-items,
+.arrival-time-cell,
+.kitchen-timing-cell,
+.owner-payment-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.order-created-time,
+.owner-customer-details span,
+.arrival-time-cell span,
+.owner-payment-details > span:last-child {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.owner-order-items span {
+  color: #cbd5e1;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.scheduled-order-badge {
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.16);
+  color: #f59e0b;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.arrival-time-cell > strong {
+  font-size: 17px;
+  color: #38bdf8;
+}
+
+.kitchen-timing-cell {
+  min-width: 155px;
+}
+
+.kitchen-timing-cell > span {
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.preparation-later,
+.preparation-now,
+.preparation-ready,
+.preparation-overdue {
+  width: fit-content;
+  padding: 5px 8px;
+  border-radius: 8px;
+  font-weight: 800;
+}
+
+.preparation-later {
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8 !important;
+}
+
+.preparation-now {
+  background: rgba(245, 158, 11, 0.16);
+  color: #f59e0b !important;
+}
+
+.preparation-ready {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e !important;
+}
+
+.preparation-overdue {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171 !important;
 }

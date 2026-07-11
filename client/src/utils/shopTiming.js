@@ -81,8 +81,11 @@ export const getShopTimingStatus = (shop) => {
   if (shop?.isActive === false) {
     return {
       isOpen: false,
+      hasUpcomingSlot: false,
       label: "Closed",
       message: "Shop is currently inactive.",
+      activeSlot: null,
+      nextSlot: null,
     };
   }
 
@@ -92,10 +95,13 @@ export const getShopTimingStatus = (shop) => {
   ) {
     return {
       isOpen: false,
+      hasUpcomingSlot: false,
       label: "Temporarily Closed",
       message:
         shop.temporaryCloseReason ||
         "Shop is temporarily not accepting orders.",
+      activeSlot: null,
+      nextSlot: null,
     };
   }
 
@@ -104,8 +110,11 @@ export const getShopTimingStatus = (shop) => {
   if (slots.length === 0) {
     return {
       isOpen: true,
+      hasUpcomingSlot: false,
       label: "Open",
       message: "Timing information is not available.",
+      activeSlot: null,
+      nextSlot: null,
     };
   }
 
@@ -124,11 +133,13 @@ export const getShopTimingStatus = (shop) => {
   if (activeSlot) {
     return {
       isOpen: true,
+      hasUpcomingSlot: false,
       label: "Open Now",
       message: `${activeSlot.name} until ${formatShopTime(
         activeSlot.closingTime
       )}`,
       activeSlot,
+      nextSlot: null,
     };
   }
 
@@ -140,17 +151,22 @@ export const getShopTimingStatus = (shop) => {
   if (nextSlot) {
     return {
       isOpen: false,
-      label: "Currently Closed",
+      hasUpcomingSlot: true,
+      label: "Pre-orders Available",
       message: `Next opening: ${
         nextSlot.name
       } at ${formatShopTime(nextSlot.openingTime)}`,
+      activeSlot: null,
       nextSlot,
     };
   }
 
   return {
     isOpen: false,
+    hasUpcomingSlot: false,
     label: "Closed for Today",
     message: "No more service sessions today.",
+    activeSlot: null,
+    nextSlot: null,
   };
 };

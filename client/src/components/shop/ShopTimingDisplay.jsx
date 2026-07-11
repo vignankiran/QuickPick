@@ -25,6 +25,8 @@ const ShopTimingDisplay = ({ shop, compact = false }) => {
           className={
             timingStatus.isOpen
               ? "shop-open-status"
+              : timingStatus.hasUpcomingSlot
+              ? "shop-preorder-status"
               : "shop-closed-status"
           }
         >

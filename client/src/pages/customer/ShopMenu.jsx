@@ -35,7 +35,15 @@ const ShopMenu = () => {
   const [successMessage, setSuccessMessage] = useState("");
 
   const timingStatus = getShopTimingStatus(shop);
-  const canPlaceOrder = timingStatus.isOpen;
+
+  const isOpenNow = timingStatus.isOpen;
+
+  const canPreOrder =
+    !isOpenNow &&
+    shop?.acceptsPreOrders === true &&
+    timingStatus.hasUpcomingSlot;
+
+  const canAddToCart = isOpenNow || canPreOrder;
 
   const normalizeArray = (data) => {
     if (Array.isArray(data)) return data;
@@ -179,10 +187,10 @@ const ShopMenu = () => {
       return;
     }
 
-    if (!canPlaceOrder) {
+    if (!canAddToCart) {
       alert(
         timingStatus.message ||
-          "This restaurant is currently closed."
+          "This restaurant is currently not accepting orders."
       );
       return;
     }
@@ -271,16 +279,22 @@ const ShopMenu = () => {
         </div>
       </div>
 
-      {!canPlaceOrder && (
-        <div className="cart-shop-closed-message">
-          <strong>{timingStatus.label}</strong>
+        {!isOpenNow && (
+          <div className="cart-shop-closed-message">
+            <strong>
+              {canPreOrder
+                ? "Pre-orders Available"
+                : timingStatus.label}
+            </strong>
 
-          <span>
-            {timingStatus.message ||
-              "This restaurant is currently not accepting orders."}
-          </span>
-        </div>
-      )}
+            <span>
+              {canPreOrder
+                ? `${timingStatus.message}. Select an arrival time within this service session during checkout.`
+                : timingStatus.message ||
+                  "This restaurant is currently not accepting orders."}
+            </span>
+          </div>
+        )}
 
       {successMessage && (
         <div className="success-message success-row">
@@ -342,21 +356,21 @@ const ShopMenu = () => {
                     const itemCanBeAdded =
                       item.isAvailable !== false &&
                       hasStock &&
-                      canPlaceOrder;
+                      canAddToCart;
 
-                    let buttonText = "Add";
+                      let buttonText = "Add";
 
-                    if (isAdding) {
-                      buttonText = "Adding...";
-                    } else if (!canPlaceOrder) {
-                      buttonText = "Shop Closed";
-                    } else if (!hasStock) {
-                      buttonText = "Sold Out";
-                    } else if (
-                      item.isAvailable === false
-                    ) {
-                      buttonText = "Unavailable";
-                    }
+                      if (isAdding) {
+                        buttonText = "Adding...";
+                      } else if (!hasStock) {
+                        buttonText = "Sold Out";
+                      } else if (item.isAvailable === false) {
+                        buttonText = "Unavailable";
+                      } else if (canPreOrder) {
+                        buttonText = "Pre-order";
+                      } else if (!canAddToCart) {
+                        buttonText = "Shop Closed";
+                      }
 
                     return (
                       <div
