@@ -1,12 +1,198 @@
+const mongoose = require("mongoose");
 const Order = require("../models/Order");
 const Cart = require("../models/Cart");
 const Inventory = require("../models/Inventory");
 const Shop = require("../models/Shop");
+const Item = require("../models/Item");
+const PickupSlot = require("../models/PickupSlot");
 const { getLocalDate } = require("../helpers/dateHelper");
+
 
 const TIME_ZONE = "Asia/Kolkata";
 const DEFAULT_PREPARATION_MINUTES = 10;
+const createOrderError = (statusCode, message) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+};
+const allowedStatusTransitions = {
+  placed: [
+    "confirmed",
+    "cancelled",
+    "rejected",
+    "expired",
+  ],
 
+  scheduled: [
+    "confirmed",
+    "cancelled",
+    "rejected",
+    "expired",
+  ],
+
+  confirmed: [
+    "preparing",
+    "cancelled",
+    "rejected",
+    "expired",
+  ],
+
+  preparing: ["ready"],
+
+  ready: [
+    "customer_arrived",
+    "handed_over",
+  ],
+
+  customer_arrived: ["handed_over"],
+
+  handed_over: ["completed"],
+
+  completed: [],
+  cancelled: [],
+  rejected: [],
+  expired: [],
+};
+const reservePickupSlot = async ({
+  shopId,
+  arrivalDate,
+  slotDate,
+  serviceSession,
+  capacity,
+  session,
+}) => {
+  try {
+    const pickupSlot = await PickupSlot.findOneAndUpdate(
+      {
+        shop: shopId,
+        arrivalTime: arrivalDate,
+
+        // Increment only when space is still available.
+        bookedOrders: {
+          $lt: capacity,
+        },
+      },
+      {
+        $setOnInsert: {
+          slotDate,
+        },
+
+        $set: {
+          serviceSession,
+          capacity,
+        },
+
+        $inc: {
+          bookedOrders: 1,
+        },
+      },
+      {
+        upsert: true,
+        returnDocument: "after",
+        session,
+      }
+    );
+
+    if (!pickupSlot) {
+      throw createOrderError(
+        400,
+        "This pickup time is full. Please select another time."
+      );
+    }
+
+    return pickupSlot;
+  } catch (error) {
+    /*
+     * When the slot already exists but has reached capacity,
+     * the upsert may produce a duplicate-key error because of
+     * the unique shop + arrivalTime index.
+     */
+    if (error?.code === 11000) {
+      throw createOrderError(
+        400,
+        "This pickup time is full. Please select another time."
+      );
+    }
+
+    throw error;
+  }
+};
+const releasePickupSlotForOrder = async (
+  order,
+  session = null
+) => {
+  if (order.pickupSlotReleased) {
+    return {
+      released: false,
+      reason: "already_released",
+    };
+  }
+
+  const shopId =
+    order.shop?._id || order.shop;
+
+  const arrivalDate = new Date(
+    order.arrivalTime
+  );
+
+  if (
+    !shopId ||
+    Number.isNaN(arrivalDate.getTime())
+  ) {
+    throw createOrderError(
+      500,
+      "Invalid shop or arrival time while releasing pickup slot."
+    );
+  }
+
+  /*
+   * Match the complete pickup minute.
+   * This prevents seconds or milliseconds from causing a mismatch.
+   */
+  const minuteStart = new Date(arrivalDate);
+  minuteStart.setSeconds(0, 0);
+
+  const minuteEnd = new Date(
+    minuteStart.getTime() + 60 * 1000
+  );
+
+  const updatedPickupSlot =
+    await PickupSlot.findOneAndUpdate(
+      {
+        shop: shopId,
+
+        arrivalTime: {
+          $gte: minuteStart,
+          $lt: minuteEnd,
+        },
+
+        bookedOrders: {
+          $gt: 0,
+        },
+      },
+      {
+        $inc: {
+          bookedOrders: -1,
+        },
+      },
+      {
+        returnDocument: "after",
+        session,
+      }
+    );
+
+  if (!updatedPickupSlot) {
+    throw createOrderError(
+      500,
+      "Reserved pickup slot could not be found or was already empty."
+    );
+  }
+
+  return {
+    released: true,
+    pickupSlot: updatedPickupSlot,
+  };
+};
 const timeToMinutes = (time) => {
   if (!time || !time.includes(":")) {
     return 0;
@@ -79,8 +265,11 @@ const getOrderInventoryDate = (order) => {
   ).date;
 };
 
-const restoreInventoryForOrder = async (order) => {
-  const inventoryDate =
+const restoreInventoryForOrder = async (
+  order,
+  session = null
+) => {
+const inventoryDate =
     getOrderInventoryDate(order);
 
   const shopId =
@@ -118,7 +307,8 @@ const restoreInventoryForOrder = async (order) => {
           },
         },
         {
-          new: true,
+          returnDocument: "after",
+          session,
         }
       );
 
@@ -139,12 +329,14 @@ const restoreInventoryForOrder = async (order) => {
       updatedInventory.status === "sold_out"
     ) {
       updatedInventory.status = "available";
-      await updatedInventory.save();
+      await updatedInventory.save({ session });
     }
   }
 };
 
 exports.placeOrder = async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
     const {
       shop,
@@ -177,294 +369,357 @@ exports.placeOrder = async (req, res) => {
       });
     }
 
-    const [shopDocument, cart] = await Promise.all([
-      Shop.findById(shop),
+    let createdOrder = null;
+    let orderIsPreOrder = false;
+    let selectedSessionName = "";
 
-      Cart.findOne({
-        customer: req.user._id,
-        shop,
-      }).populate(
-        "items.item",
-        "name price preparationTime prepTime preparationMinutes"
-      ),
-    ]);
+    await session.withTransaction(async () => {
+      const shopDocument = await Shop.findById(shop).session(session);
 
-    if (!shopDocument) {
-      return res.status(404).json({
-        success: false,
-        message: "Shop not found.",
-      });
-    }
+      if (!shopDocument) {
+        throw createOrderError(404, "Shop not found.");
+      }
 
-    if (shopDocument.isActive === false) {
-      return res.status(400).json({
-        success: false,
-        message: "This shop is currently inactive.",
-      });
-    }
-
-    const now = new Date();
-
-    if (
-      shopDocument.temporaryClosedUntil &&
-      new Date(shopDocument.temporaryClosedUntil) > now
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          shopDocument.temporaryCloseReason ||
-          "This shop is temporarily closed.",
-      });
-    }
-
-    if (!cart || cart.items.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Cart is empty.",
-      });
-    }
-
-    const maxPreparationTime = Math.max(
-      DEFAULT_PREPARATION_MINUTES,
-      ...cart.items.map((cartItem) => {
-        const populatedItem =
-          typeof cartItem.item === "object"
-            ? cartItem.item
-            : null;
-
-        return Number(
-          cartItem.preparationTime ||
-            populatedItem?.preparationTime ||
-            populatedItem?.prepTime ||
-            populatedItem?.preparationMinutes ||
-            DEFAULT_PREPARATION_MINUTES
-        );
-      })
-    );
-
-    const minimumArrivalTime = new Date(
-      now.getTime() +
-        maxPreparationTime * 60 * 1000
-    );
-
-    if (arrivalDate < minimumArrivalTime) {
-      return res.status(400).json({
-        success: false,
-        message: `Arrival time must be at least ${maxPreparationTime} minutes from now.`,
-      });
-    }
-
-    const currentIndiaTime =
-      getIndiaDateAndMinutes(now);
-
-    const arrivalIndiaTime =
-      getIndiaDateAndMinutes(arrivalDate);
-
-    // QuickPick currently supports only today's inventory.
-    if (
-      arrivalIndiaTime.date !== currentIndiaTime.date
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Orders can currently be scheduled only for today.",
-      });
-    }
-
-    const serviceSlots =
-      getShopServiceSlots(shopDocument);
-
-    if (serviceSlots.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Shop service timings have not been configured.",
-      });
-    }
-
-    const arrivalSlot = serviceSlots.find(
-      (slot) => {
-        const openingMinutes =
-          timeToMinutes(slot.openingTime);
-
-        const closingMinutes =
-          timeToMinutes(slot.closingTime);
-
-        return (
-          arrivalIndiaTime.minutes >=
-            openingMinutes &&
-          arrivalIndiaTime.minutes <
-            closingMinutes
+      if (shopDocument.isActive === false) {
+        throw createOrderError(
+          400,
+          "This shop is currently inactive."
         );
       }
-    );
 
-    if (!arrivalSlot) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Selected arrival time is outside the shop's service timings.",
-      });
-    }
-
-    const currentSlot = serviceSlots.find(
-      (slot) => {
-        const openingMinutes =
-          timeToMinutes(slot.openingTime);
-
-        const closingMinutes =
-          timeToMinutes(slot.closingTime);
-
-        return (
-          currentIndiaTime.minutes >=
-            openingMinutes &&
-          currentIndiaTime.minutes <
-            closingMinutes
-        );
-      }
-    );
-
-    const arrivalIsInCurrentSession =
-      currentSlot &&
-      arrivalIndiaTime.minutes >=
-        currentIndiaTime.minutes &&
-      arrivalIndiaTime.minutes <
-        timeToMinutes(currentSlot.closingTime);
-
-    const isPreOrder =
-      !arrivalIsInCurrentSession;
-
-    if (
-      isPreOrder &&
-      shopDocument.acceptsPreOrders === false
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "This shop is not accepting pre-orders.",
-      });
-    }
-
-    const today = getLocalDate();
-
-    // Validate today's inventory
-    for (const cartItem of cart.items) {
-      const itemId =
-        cartItem.item?._id || cartItem.item;
-
-      const itemName =
-        cartItem.name ||
-        cartItem.item?.name ||
-        "Item";
-
-      const inventory = await Inventory.findOne({
-        shop,
-        item: itemId,
-        date: today,
-      });
+      const now = new Date();
 
       if (
-        !inventory ||
-        inventory.remainingQuantity <
-          cartItem.quantity
+        shopDocument.temporaryClosedUntil &&
+        new Date(shopDocument.temporaryClosedUntil) > now
       ) {
-        return res.status(400).json({
-          success: false,
-          message: `${itemName} is not available in the requested quantity.`,
-        });
+        throw createOrderError(
+          400,
+          shopDocument.temporaryCloseReason ||
+            "This shop is temporarily closed."
+        );
       }
-    }
 
-    // Deduct inventory
-    for (const cartItem of cart.items) {
-      const itemId =
-        cartItem.item?._id || cartItem.item;
+      const cart = await Cart.findOne({
+        customer: req.user._id,
+        shop,
+      }).session(session);
 
-      await Inventory.findOneAndUpdate(
-        {
-          shop,
-          item: itemId,
-          date: today,
-        },
-        {
-          $inc: {
-            soldQuantity: cartItem.quantity,
-            remainingQuantity:
-              -cartItem.quantity,
-          },
-        }
+      if (!cart || !Array.isArray(cart.items) || cart.items.length === 0) {
+        throw createOrderError(400, "Cart is empty.");
+      }
+
+      const itemIds = cart.items.map(
+        (cartItem) => cartItem.item?._id || cartItem.item
       );
-    }
 
-    const kitchenStartTime = new Date(
-      arrivalDate.getTime() -
-        maxPreparationTime * 60 * 1000
-    );
+      const databaseItems = await Item.find({
+        _id: { $in: itemIds },
+        shop,
+        isAvailable: { $ne: false },
+      })
+        .session(session)
+        .lean();
 
-    const expectedReadyTime = new Date(
-      arrivalDate.getTime() -
-        2 * 60 * 1000
-    );
+      const itemMap = new Map(
+        databaseItems.map((item) => [
+          item._id.toString(),
+          item,
+        ])
+      );
 
-    const orderItems = cart.items.map(
-      (cartItem) => {
-        const rawItem =
-          typeof cartItem.toObject ===
-          "function"
-            ? cartItem.toObject()
-            : { ...cartItem };
+      if (databaseItems.length !== itemIds.length) {
+        throw createOrderError(
+          400,
+          "One or more cart items are no longer available."
+        );
+      }
+
+      const secureOrderItems = cart.items.map((cartItem) => {
+        const itemId = (
+          cartItem.item?._id || cartItem.item
+        ).toString();
+
+        const databaseItem = itemMap.get(itemId);
+        const quantity = Number(cartItem.quantity || 0);
+
+        if (!databaseItem) {
+          throw createOrderError(
+            400,
+            "One or more cart items were not found."
+          );
+        }
+
+        if (!Number.isInteger(quantity) || quantity < 1) {
+          throw createOrderError(
+            400,
+            `Invalid quantity for ${databaseItem.name}.`
+          );
+        }
+
+        const price = Number(databaseItem.price || 0);
+
+        if (!Number.isFinite(price) || price < 0) {
+          throw createOrderError(
+            400,
+            `Invalid price configured for ${databaseItem.name}.`
+          );
+        }
 
         return {
-          ...rawItem,
-          item:
-            rawItem.item?._id ||
-            rawItem.item,
+          item: databaseItem._id,
+          name: databaseItem.name,
+          price,
+          quantity,
+          subtotal: price * quantity,
         };
+      });
+
+      const secureTotalAmount = secureOrderItems.reduce(
+        (total, orderItem) => total + orderItem.subtotal,
+        0
+      );
+
+      const maxPreparationTime = Math.max(
+        DEFAULT_PREPARATION_MINUTES,
+        ...databaseItems.map((item) =>
+          Number(
+            item.preparationTime ||
+              item.prepTime ||
+              item.preparationMinutes ||
+              DEFAULT_PREPARATION_MINUTES
+          )
+        )
+      );
+
+      const minimumArrivalTime = new Date(
+        now.getTime() + maxPreparationTime * 60 * 1000
+      );
+
+      if (arrivalDate < minimumArrivalTime) {
+        throw createOrderError(
+          400,
+          `Arrival time must be at least ${maxPreparationTime} minutes from now.`
+        );
       }
-    );
 
-    const order = await Order.create({
-      customer: req.user._id,
-      shop,
-      items: orderItems,
-      totalAmount: cart.totalAmount,
-      arrivalTime: arrivalDate,
-      kitchenStartTime,
-      expectedReadyTime,
-      paymentMethod,
-      paymentStatus: "pending",
-      orderStatus: isPreOrder
-        ? "scheduled"
-        : "placed",
-      customerNote:
-        customerNote || notes || "",
+      const currentIndiaTime = getIndiaDateAndMinutes(now);
+      const arrivalIndiaTime =
+        getIndiaDateAndMinutes(arrivalDate);
+
+      if (arrivalIndiaTime.date !== currentIndiaTime.date) {
+        throw createOrderError(
+          400,
+          "Orders can currently be scheduled only for today."
+        );
+      }
+
+      const serviceSlots = getShopServiceSlots(shopDocument);
+
+      if (serviceSlots.length === 0) {
+        throw createOrderError(
+          400,
+          "Shop service timings have not been configured."
+        );
+      }
+
+      const arrivalSlot = serviceSlots.find((slot) => {
+        const openingMinutes = timeToMinutes(slot.openingTime);
+        const closingMinutes = timeToMinutes(slot.closingTime);
+
+        return (
+          arrivalIndiaTime.minutes >= openingMinutes &&
+          arrivalIndiaTime.minutes < closingMinutes
+        );
+      });
+
+      if (!arrivalSlot) {
+        throw createOrderError(
+          400,
+          "Selected arrival time is outside the shop's service timings."
+        );
+      }
+
+      const currentSlot = serviceSlots.find((slot) => {
+        const openingMinutes = timeToMinutes(slot.openingTime);
+        const closingMinutes = timeToMinutes(slot.closingTime);
+
+        return (
+          currentIndiaTime.minutes >= openingMinutes &&
+          currentIndiaTime.minutes < closingMinutes
+        );
+      });
+
+      const arrivalIsInCurrentSession =
+        currentSlot &&
+        arrivalIndiaTime.minutes >= currentIndiaTime.minutes &&
+        arrivalIndiaTime.minutes <
+          timeToMinutes(currentSlot.closingTime);
+
+      orderIsPreOrder = !arrivalIsInCurrentSession;
+      selectedSessionName = arrivalSlot.name;
+
+      if (
+        orderIsPreOrder &&
+        shopDocument.acceptsPreOrders === false
+      ) {
+        throw createOrderError(
+          400,
+          "This shop is not accepting pre-orders."
+        );
+      }
+      const slotCapacity = Number(
+  shopDocument.maxOrdersPerSlot || 10
+);
+
+if (
+  !Number.isInteger(slotCapacity) ||
+  slotCapacity < 1
+) {
+  throw createOrderError(
+    400,
+    "The shop pickup-slot capacity is not configured correctly."
+  );
+}
+
+await reservePickupSlot({
+  shopId: shopDocument._id,
+  arrivalDate,
+  slotDate: arrivalIndiaTime.date,
+  serviceSession: arrivalSlot.name,
+  capacity: slotCapacity,
+  session,
+});
+      const inventoryDate = getLocalDate();
+
+      /*
+       * Atomic stock deduction.
+       * The update succeeds only when enough stock still exists.
+       */
+      for (const orderItem of secureOrderItems) {
+        const updatedInventory =
+          await Inventory.findOneAndUpdate(
+            {
+              shop,
+              item: orderItem.item,
+              date: inventoryDate,
+              remainingQuantity: {
+                $gte: orderItem.quantity,
+              },
+            },
+            {
+              $inc: {
+                soldQuantity: orderItem.quantity,
+                remainingQuantity: -orderItem.quantity,
+              },
+            },
+            {
+              returnDocument: "after",
+              session,
+            }
+          );
+
+        if (!updatedInventory) {
+          throw createOrderError(
+            400,
+            `${orderItem.name} is no longer available in the requested quantity.`
+          );
+        }
+
+        const newInventoryStatus =
+          updatedInventory.remainingQuantity === 0
+            ? "sold_out"
+            : "available";
+
+        if (updatedInventory.status !== newInventoryStatus) {
+          updatedInventory.status = newInventoryStatus;
+          await updatedInventory.save({ session });
+        }
+      }
+
+      const kitchenStartTime = new Date(
+        arrivalDate.getTime() -
+          maxPreparationTime * 60 * 1000
+      );
+
+      const expectedReadyTime = new Date(
+        arrivalDate.getTime() - 2 * 60 * 1000
+      );
+
+      const createdOrders = await Order.create(
+        [
+          {
+            customer: req.user._id,
+            shop,
+            items: secureOrderItems,
+            totalAmount: secureTotalAmount,
+            arrivalTime: arrivalDate,
+            kitchenStartTime,
+            expectedReadyTime,
+            paymentMethod,
+            paymentStatus: "pending",
+            orderStatus: orderIsPreOrder
+              ? "scheduled"
+              : "placed",
+            customerNote: customerNote || notes || "",
+          },
+        ],
+        {
+          session,
+        }
+      );
+
+      createdOrder = createdOrders[0];
+
+      await Cart.updateOne(
+        {
+          _id: cart._id,
+          customer: req.user._id,
+          shop,
+        },
+        {
+          $set: {
+            items: [],
+            totalAmount: 0,
+          },
+        },
+        {
+          session,
+        }
+      );
     });
-
-    cart.items = [];
-    cart.totalAmount = 0;
-    await cart.save();
 
     return res.status(201).json({
       success: true,
-      message: isPreOrder
+      message: orderIsPreOrder
         ? "Pre-order scheduled successfully."
         : "Order placed successfully.",
-      isPreOrder,
-      serviceSession: arrivalSlot.name,
-      order,
+      isPreOrder: orderIsPreOrder,
+      serviceSession: selectedSessionName,
+      order: createdOrder,
     });
   } catch (error) {
-    console.error(
-      "PLACE ORDER ERROR:",
-      error
-    );
+    if (error.statusCode && error.statusCode < 500) {
+        console.warn(`PLACE ORDER REJECTED: ${error.message}`);
+      } else {
+        console.error("PLACE ORDER ERROR:", error);
+      }
 
-    return res.status(500).json({
+    const transactionsUnsupported =
+      error.message?.includes(
+        "Transaction numbers are only allowed on a replica set"
+      );
+
+    return res.status(error.statusCode || 500).json({
       success: false,
-      message:
-        error.message ||
-        "Failed to place order.",
+      message: transactionsUnsupported
+        ? "Database transactions are unavailable. Use MongoDB Atlas or configure MongoDB as a replica set."
+        : error.statusCode
+        ? error.message
+        : "Failed to place order. Please try again.",
     });
+  } finally {
+    await session.endSession();
   }
 };
 
@@ -529,6 +784,8 @@ exports.getShopOrders = async (req, res) => {
 };
 
 exports.updateOrderStatus = async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
     const { orderId } = req.params;
     const { orderStatus, ownerNote } = req.body;
@@ -554,96 +811,148 @@ exports.updateOrderStatus = async (req, res) => {
       });
     }
 
-    const order = await Order.findById(orderId).populate("shop");
+    let updatedOrder = null;
+    let inventoryWasRestored = false;
+    let pickupSlotWasReleased = false;
 
-    if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found.",
+    await session.withTransaction(async () => {
+      const order = await Order.findById(orderId)
+        .session(session)
+        .populate("shop");
+
+      if (!order) {
+        throw createOrderError(404, "Order not found.");
+      }
+
+      if (
+        order.shop.owner.toString() !==
+        req.user._id.toString()
+      ) {
+        throw createOrderError(
+          403,
+          "Access denied. Owner only."
+        );
+      }
+
+      const previousStatus = order.orderStatus;
+
+      if (previousStatus === orderStatus) {
+        updatedOrder = order;
+        return;
+      }
+      const validNextStatuses =
+  allowedStatusTransitions[previousStatus] || [];
+
+if (!validNextStatuses.includes(orderStatus)) {
+  throw createOrderError(
+    400,
+    `Order status cannot change from ${previousStatus.replaceAll(
+      "_",
+      " "
+    )} to ${orderStatus.replaceAll("_", " ")}.`
+  );
+}
+
+      const cancellationStatuses = [
+        "cancelled",
+        "rejected",
+        "expired",
+      ];
+
+      const beforePreparationStatuses = [
+        "placed",
+        "confirmed",
+        "scheduled",
+      ];
+
+      const shouldReleaseOrderResources =
+        cancellationStatuses.includes(orderStatus);
+
+      if (
+        shouldReleaseOrderResources &&
+        !beforePreparationStatuses.includes(previousStatus)
+      ) {
+        throw createOrderError(
+          400,
+          "This order cannot be cancelled, rejected, or expired after preparation starts."
+        );
+      }
+
+      if (
+        shouldReleaseOrderResources &&
+        !order.inventoryRestored
+      ) {
+        await restoreInventoryForOrder(order, session);
+
+        order.inventoryRestored = true;
+        order.inventoryRestoredAt = new Date();
+        inventoryWasRestored = true;
+      }
+
+      if (
+        shouldReleaseOrderResources &&
+        !order.pickupSlotReleased
+      ) {
+        const releaseResult =
+          await releasePickupSlotForOrder(order, session);
+
+        if (releaseResult.released) {
+          order.pickupSlotReleased = true;
+          order.pickupSlotReleasedAt = new Date();
+          pickupSlotWasReleased = true;
+        }
+      }
+
+      order.orderStatus = orderStatus;
+
+      if (ownerNote !== undefined) {
+        order.ownerNote = String(ownerNote).trim();
+      }
+
+      order.statusHistory.push({
+        status: orderStatus,
+        at: new Date(),
+        note:
+          ownerNote ||
+          `Status changed from ${previousStatus} to ${orderStatus}`,
       });
-    }
 
-    if (
-      order.shop.owner.toString() !==
-      req.user._id.toString()
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Owner only.",
-      });
-    }
+      await order.save({ session });
 
-    const previousStatus = order.orderStatus;
-
-    const inventoryRestoringStatuses = [
-      "cancelled",
-      "rejected",
-      "expired",
-    ];
-
-    const beforePreparationStatuses = [
-      "placed",
-      "confirmed",
-      "scheduled",
-    ];
-
-    const shouldRestoreInventory =
-      inventoryRestoringStatuses.includes(orderStatus);
-
-    if (
-      shouldRestoreInventory &&
-      !beforePreparationStatuses.includes(previousStatus)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "This order cannot be cancelled, rejected, or expired after preparation starts.",
-      });
-    }
-
-    if (
-      shouldRestoreInventory &&
-      !order.inventoryRestored
-    ) {
-      await restoreInventoryForOrder(order);
-
-      order.inventoryRestored = true;
-      order.inventoryRestoredAt = new Date();
-    }
-
-    order.orderStatus = orderStatus;
-
-    if (ownerNote !== undefined) {
-      order.ownerNote = ownerNote.trim();
-    }
-
-    order.statusHistory.push({
-      status: orderStatus,
-      at: new Date(),
-      note:
-        ownerNote ||
-        `Status changed from ${previousStatus} to ${orderStatus}`,
+      updatedOrder = order;
     });
-
-    await order.save();
 
     return res.status(200).json({
       success: true,
-      message: shouldRestoreInventory
-        ? "Order status updated and inventory restored."
-        : "Order status updated successfully.",
-      inventoryRestored: order.inventoryRestored,
-      order,
+      message:
+        inventoryWasRestored || pickupSlotWasReleased
+          ? "Order status updated, inventory restored, and pickup slot released."
+          : "Order status updated successfully.",
+      inventoryRestored:
+        updatedOrder?.inventoryRestored || false,
+      pickupSlotReleased:
+        updatedOrder?.pickupSlotReleased || false,
+      order: updatedOrder,
     });
   } catch (error) {
-    console.error("UPDATE ORDER STATUS ERROR:", error);
+    if (error.statusCode && error.statusCode < 500) {
+      console.warn(
+        `UPDATE ORDER STATUS REJECTED: ${error.message}`
+      );
+    } else {
+      console.error("UPDATE ORDER STATUS ERROR:", error);
+    }
 
-    return res.status(500).json({
-      success: false,
-      message:
-        error.message ||
-        "Failed to update order status.",
-    });
+    return res
+      .status(error.statusCode || 500)
+      .json({
+        success: false,
+        message: error.statusCode
+          ? error.message
+          : "Failed to update order status.",
+      });
+  } finally {
+    await session.endSession();
   }
 };
 
@@ -683,87 +992,115 @@ exports.getKitchenQueue = async (req, res) => {
 };
 
 exports.cancelOrder = async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
     const { orderId } = req.params;
     const { reason } = req.body || {};
 
-    const order = await Order.findById(orderId);
+    let cancelledOrder = null;
 
-    if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found.",
+    await session.withTransaction(async () => {
+      const order = await Order.findById(orderId).session(session);
+
+      if (!order) {
+        throw createOrderError(404, "Order not found.");
+      }
+
+      if (
+        order.customer.toString() !==
+        req.user._id.toString()
+      ) {
+        throw createOrderError(
+          403,
+          "You can cancel only your own order."
+        );
+      }
+
+      const cancellableStatuses = [
+        "placed",
+        "confirmed",
+        "scheduled",
+      ];
+
+      if (!cancellableStatuses.includes(order.orderStatus)) {
+        throw createOrderError(
+          400,
+          "Order cannot be cancelled after preparation starts."
+        );
+      }
+
+      // Restore the item's inventory only once.
+      if (!order.inventoryRestored) {
+        await restoreInventoryForOrder(order, session);
+
+        order.inventoryRestored = true;
+        order.inventoryRestoredAt = new Date();
+      }
+
+      // Release the reserved arrival-time slot only once.
+      if (!order.pickupSlotReleased) {
+        const slotReleaseResult =
+          await releasePickupSlotForOrder(order, session);
+
+        if (slotReleaseResult.released) {
+  order.pickupSlotReleased = true;
+  order.pickupSlotReleasedAt = new Date();
+} else if (
+          slotReleaseResult.reason === "invalid_order_data"
+        ) {
+          throw createOrderError(
+            500,
+            "Could not release the pickup slot because the order timing is invalid."
+          );
+        }
+      }
+
+      order.orderStatus = "cancelled";
+
+      order.statusHistory.push({
+        status: "cancelled",
+        at: new Date(),
+        note:
+          reason ||
+          "Cancelled by customer before preparation",
       });
-    }
 
-    if (
-      order.customer.toString() !==
-      req.user._id.toString()
-    ) {
-      return res.status(403).json({
-        success: false,
-        message:
-          "You can cancel only your own order.",
-      });
-    }
+      await order.save({ session });
 
-    const cancellableStatuses = [
-      "placed",
-      "confirmed",
-      "scheduled",
-    ];
-
-    if (
-      !cancellableStatuses.includes(
-        order.orderStatus
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Order cannot be cancelled after preparation starts.",
-      });
-    }
-
-    if (!order.inventoryRestored) {
-      await restoreInventoryForOrder(order);
-
-      order.inventoryRestored = true;
-      order.inventoryRestoredAt = new Date();
-    }
-
-    order.orderStatus = "cancelled";
-
-    order.statusHistory.push({
-      status: "cancelled",
-      at: new Date(),
-      note:
-        reason ||
-        "Cancelled by customer before preparation",
+      cancelledOrder = order;
     });
-
-    await order.save();
 
     return res.status(200).json({
       success: true,
       message:
-        "Order cancelled and inventory restored successfully.",
+        "Order cancelled, inventory restored, and pickup slot released.",
       inventoryRestored:
-        order.inventoryRestored,
-      order,
+        cancelledOrder.inventoryRestored,
+      pickupSlotReleased:
+        cancelledOrder.pickupSlotReleased,
+      order: cancelledOrder,
     });
   } catch (error) {
-    console.error(
-      "CANCEL ORDER ERROR:",
-      error
-    );
+    if (error.statusCode && error.statusCode < 500) {
+      console.warn(
+        `CANCEL ORDER REJECTED: ${error.message}`
+      );
+    } else {
+      console.error("CANCEL ORDER ERROR:", error);
+    }
 
-    return res.status(500).json({
-      success: false,
-      message:
-        error.message ||
-        "Failed to cancel order.",
-    });
+    return res
+      .status(error.statusCode || 500)
+      .json({
+        success: false,
+        message:
+          error.statusCode
+            ? error.message
+            : "Failed to cancel order.",
+      });
+  } finally {
+    await session.endSession();
   }
 };
 

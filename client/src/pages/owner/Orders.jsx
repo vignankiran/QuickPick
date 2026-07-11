@@ -8,19 +8,51 @@ import {
 } from "../../services/orderService";
 import { useAuth } from "../../context/AuthContext";
 
-const orderStatuses = [
-  "placed",
-  "confirmed",
-  "scheduled",
-  "preparing",
-  "ready",
-  "customer_arrived",
-  "handed_over",
-  "completed",
-  "cancelled",
-  "rejected",
-  "expired",
-];
+const statusTransitions = {
+  placed: [
+    "confirmed",
+    "cancelled",
+    "rejected",
+    "expired",
+  ],
+
+  scheduled: [
+    "confirmed",
+    "cancelled",
+    "rejected",
+    "expired",
+  ],
+
+  confirmed: [
+    "preparing",
+    "cancelled",
+    "rejected",
+    "expired",
+  ],
+
+  preparing: ["ready"],
+
+  ready: [
+    "customer_arrived",
+    "handed_over",
+  ],
+
+  customer_arrived: ["handed_over"],
+
+  handed_over: ["completed"],
+
+  completed: [],
+  cancelled: [],
+  rejected: [],
+  expired: [],
+};
+
+const getStatusOptions = (currentStatus) => {
+  return [
+    currentStatus,
+    ...(statusTransitions[currentStatus] || []),
+  ];
+};
 
 const activePreparationStatuses = [
   "preparing",
@@ -569,14 +601,16 @@ const Orders = () => {
                           )
                         }
                       >
-                        {orderStatuses.map((status) => (
-                          <option
-                            value={status}
-                            key={status}
-                          >
-                            {status.replaceAll("_", " ")}
-                          </option>
-                        ))}
+                        {getStatusOptions(order.orderStatus).map(
+  (status) => (
+    <option
+      value={status}
+      key={status}
+    >
+      {status.replaceAll("_", " ")}
+    </option>
+  )
+)}
                       </select>
                     </td>
 

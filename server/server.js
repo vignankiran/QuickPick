@@ -19,7 +19,29 @@ connectDB();
 
 const app = express();
 
-app.use(cors());
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  "http://localhost:5173",
+].filter(Boolean);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Allow Postman, mobile apps and server-to-server requests
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(
+        new Error("This origin is not allowed by CORS.")
+      );
+    },
+  })
+);
 app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/shops", shopRoutes);

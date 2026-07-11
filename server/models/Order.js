@@ -128,6 +128,15 @@ const orderSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    pickupSlotReleased: {
+  type: Boolean,
+  default: false,
+},
+
+pickupSlotReleasedAt: {
+  type: Date,
+  default: null,
+},
     customerNote: {
       type: String,
       default: "",
