@@ -119,7 +119,15 @@ const orderSchema = new mongoose.Schema(
       ],
       default: "placed",
     },
+    inventoryRestored: {
+      type: Boolean,
+      default: false,
+    },
 
+    inventoryRestoredAt: {
+      type: Date,
+      default: null,
+    },
     customerNote: {
       type: String,
       default: "",

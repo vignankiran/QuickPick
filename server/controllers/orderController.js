@@ -68,6 +68,81 @@ const getShopServiceSlots = (shop) => {
 
   return [];
 };
+const getOrderInventoryDate = (order) => {
+  const sourceDate =
+    order.arrivalTime ||
+    order.createdAt ||
+    new Date();
+
+  return getIndiaDateAndMinutes(
+    new Date(sourceDate)
+  ).date;
+};
+
+const restoreInventoryForOrder = async (order) => {
+  const inventoryDate =
+    getOrderInventoryDate(order);
+
+  const shopId =
+    order.shop?._id || order.shop;
+
+  for (const orderItem of order.items || []) {
+    const itemId =
+      orderItem.item?._id ||
+      orderItem.item;
+
+    const quantity = Number(
+      orderItem.quantity || 0
+    );
+
+    if (!itemId || quantity <= 0) {
+      continue;
+    }
+
+    const updatedInventory =
+      await Inventory.findOneAndUpdate(
+        {
+          shop: shopId,
+          item: itemId,
+          date: inventoryDate,
+
+          // Prevent sold quantity from becoming negative.
+          soldQuantity: {
+            $gte: quantity,
+          },
+        },
+        {
+          $inc: {
+            soldQuantity: -quantity,
+            remainingQuantity: quantity,
+          },
+        },
+        {
+          new: true,
+        }
+      );
+
+    if (!updatedInventory) {
+      const itemName =
+        orderItem.name ||
+        orderItem.item?.name ||
+        "item";
+
+      throw new Error(
+        `Could not restore inventory for ${itemName}.`
+      );
+    }
+
+    // A previously sold-out item should become visible again.
+    if (
+      updatedInventory.remainingQuantity > 0 &&
+      updatedInventory.status === "sold_out"
+    ) {
+      updatedInventory.status = "available";
+      await updatedInventory.save();
+    }
+  }
+};
 
 exports.placeOrder = async (req, res) => {
   try {
@@ -488,39 +563,86 @@ exports.updateOrderStatus = async (req, res) => {
       });
     }
 
-    if (order.shop.owner.toString() !== req.user._id.toString()) {
+    if (
+      order.shop.owner.toString() !==
+      req.user._id.toString()
+    ) {
       return res.status(403).json({
         success: false,
         message: "Access denied. Owner only.",
       });
     }
 
+    const previousStatus = order.orderStatus;
+
+    const inventoryRestoringStatuses = [
+      "cancelled",
+      "rejected",
+      "expired",
+    ];
+
+    const beforePreparationStatuses = [
+      "placed",
+      "confirmed",
+      "scheduled",
+    ];
+
+    const shouldRestoreInventory =
+      inventoryRestoringStatuses.includes(orderStatus);
+
+    if (
+      shouldRestoreInventory &&
+      !beforePreparationStatuses.includes(previousStatus)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "This order cannot be cancelled, rejected, or expired after preparation starts.",
+      });
+    }
+
+    if (
+      shouldRestoreInventory &&
+      !order.inventoryRestored
+    ) {
+      await restoreInventoryForOrder(order);
+
+      order.inventoryRestored = true;
+      order.inventoryRestoredAt = new Date();
+    }
+
     order.orderStatus = orderStatus;
 
-    if (ownerNote) {
-      order.ownerNote = ownerNote;
+    if (ownerNote !== undefined) {
+      order.ownerNote = ownerNote.trim();
     }
 
     order.statusHistory.push({
       status: orderStatus,
       at: new Date(),
-      note: ownerNote || "",
+      note:
+        ownerNote ||
+        `Status changed from ${previousStatus} to ${orderStatus}`,
     });
 
     await order.save();
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      message: "Order status updated successfully.",
+      message: shouldRestoreInventory
+        ? "Order status updated and inventory restored."
+        : "Order status updated successfully.",
+      inventoryRestored: order.inventoryRestored,
       order,
     });
-
   } catch (error) {
     console.error("UPDATE ORDER STATUS ERROR:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message ||
+        "Failed to update order status.",
     });
   }
 };
@@ -574,20 +696,40 @@ exports.cancelOrder = async (req, res) => {
       });
     }
 
-    if (order.customer.toString() !== req.user._id.toString()) {
+    if (
+      order.customer.toString() !==
+      req.user._id.toString()
+    ) {
       return res.status(403).json({
         success: false,
-        message: "You can cancel only your own order.",
+        message:
+          "You can cancel only your own order.",
       });
     }
 
-    const cancellableStatuses = ["placed", "confirmed", "scheduled"];
+    const cancellableStatuses = [
+      "placed",
+      "confirmed",
+      "scheduled",
+    ];
 
-    if (!cancellableStatuses.includes(order.orderStatus)) {
+    if (
+      !cancellableStatuses.includes(
+        order.orderStatus
+      )
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Order cannot be cancelled after preparation starts.",
+        message:
+          "Order cannot be cancelled after preparation starts.",
       });
+    }
+
+    if (!order.inventoryRestored) {
+      await restoreInventoryForOrder(order);
+
+      order.inventoryRestored = true;
+      order.inventoryRestoredAt = new Date();
     }
 
     order.orderStatus = "cancelled";
@@ -595,21 +737,32 @@ exports.cancelOrder = async (req, res) => {
     order.statusHistory.push({
       status: "cancelled",
       at: new Date(),
-      note: reason || "Cancelled by customer",
+      note:
+        reason ||
+        "Cancelled by customer before preparation",
     });
 
     await order.save();
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      message: "Order cancelled successfully.",
+      message:
+        "Order cancelled and inventory restored successfully.",
+      inventoryRestored:
+        order.inventoryRestored,
       order,
     });
   } catch (error) {
-    console.error("CANCEL ORDER ERROR:", error);
-    res.status(500).json({
+    console.error(
+      "CANCEL ORDER ERROR:",
+      error
+    );
+
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message ||
+        "Failed to cancel order.",
     });
   }
 };
