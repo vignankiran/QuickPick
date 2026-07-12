@@ -14,7 +14,7 @@ import Orders from "../pages/owner/Orders";
 import Analytics from "../pages/owner/Analytics";
 import AIInsights from "../pages/owner/AIInsights";
 import ShopSettings from "../pages/owner/ShopSettings";
-
+import CreateShop from "../pages/owner/CreateShop";
 import ProtectedRoute from "../components/common/ProtectedRoute";
 import Categories from "../pages/owner/Categories";
 import Items from "../pages/owner/Items";
@@ -45,6 +45,7 @@ const AppRoutes = () => {
         </Route>
         <Route element={<ProtectedRoute allowedRoles={["owner"]} />}>
           <Route path="/owner" element={<OwnerLayout />}>
+            <Route path="create-shop" element={<CreateShop />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="shop-settings" element={<ShopSettings />} />
             <Route path="categories" element={<Categories />} />

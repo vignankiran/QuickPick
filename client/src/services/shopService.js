@@ -17,3 +17,7 @@ export const updateShopDetails = async (shopId, shopData) => {
   const res = await API.put(`/shops/${shopId}`, shopData);
   return res.data;
 };
+export const createShop = async (shopData) => {
+  const response = await API.post("/shops", shopData);
+  return response.data;
+};
