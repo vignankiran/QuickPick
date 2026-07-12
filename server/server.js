@@ -22,7 +22,35 @@ const app = express();
 const allowedOrigins = [
   process.env.CLIENT_URL,
   "http://localhost:5173",
-].filter(Boolean);
+]
+  .filter(Boolean)
+  .map((origin) => origin.trim().replace(/\/$/, ""));
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Allow Postman and server-to-server requests
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      const normalizedOrigin = origin.replace(/\/$/, "");
+
+      if (allowedOrigins.includes(normalizedOrigin)) {
+        return callback(null, true);
+      }
+
+      console.warn("CORS BLOCKED:", {
+        receivedOrigin: normalizedOrigin,
+        allowedOrigins,
+      });
+
+      return callback(
+        new Error("This origin is not allowed by CORS.")
+      );
+    },
+  })
+);
 
 app.use(
   cors({
